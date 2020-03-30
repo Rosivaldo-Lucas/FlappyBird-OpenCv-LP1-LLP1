@@ -7,14 +7,32 @@
 using namespace std;
 using namespace cv;
 
-Mat fruta, bird, cano;
+string caminhos[] = {
+  "cano1.png",
+  "cano2.png",
+  "cano3.png",
+  "cano4.png",
+  "cano_baixo01.png",
+  "cano_baixo02.png",
+  "cano_baixo03.png",
+  "cano_baixo04.png"
+};
+
+Mat bird, fundo;
+Mat canos[8];
 
 void detectAndDraw(Mat& img, CascadeClassifier& cascade, CascadeClassifier& nestedCascade, double scale);
-void drawBird(Mat frame, int ry);
-void drawScenery(Mat frame, int incrementCenario, int frames);
+void drawBird(Mat frame, int ry, int frames);
+void drawScenery(Mat frame, int frames);
+void detectCollision(int yBird, int velocidade);
 
 string cascadeName;
 string nestedCascadeName;
+Rect r;
+static int score = 0; // Pontos do jogo
+string scoreString;
+static int y = 240; // yBird
+static int x = 0; // xBird
 
 /**
  * @brief Draws a transparent image over a frame Mat.
@@ -59,7 +77,7 @@ int main(int argc, const char** argv){
   string inputName;
   CascadeClassifier cascade, nestedCascade;
   const double scale = 1;
-
+  int tamanho;
   
   /**fruta = cv::imread("laranja.png", IMREAD_UNCHANGED);
     if(fruta.empty()){
@@ -73,11 +91,33 @@ int main(int argc, const char** argv){
     cout << "Error opening file bird.png" << endl;
   }
 
+  tamanho = sizeof(canos)/sizeof(canos[0]);
+
+  // Abre as imagem do cenario
+  for(int i = 0; i < tamanho; i++){
+    canos[i] = cv::imread(caminhos[i]);
+    if(canos[i].empty()){
+      cout << "Erro opening file " << caminhos[i] << ".png" << endl;
+    }
+  }
+  
   // Abre a imagem do cano do cenario
-  cano = cv::imread("cano.png");
-  if(cano.empty()){
+  fundo = cv::imread("nuvem.png");
+  if(fundo.empty()){
     cout << "Error opening file cano.png" << endl;
   }
+
+  // Abre a imagem do cano2 do cenario
+  //canos[1] = cv::imread("cano2.png");
+  //if(cano2.empty()){
+  //  cout << "Error opening file cano2.png" << endl;
+  //}
+
+  // Abre a imagem do canoLongo do cenario
+  //canos[2] = cv::imread("cano_longo.png");
+  //if(canoLongo.empty()){
+   // cout << "Error opening file cano_longo.png" << endl;
+ // }
 
   string folder = "/home/rosivaldo/Downloads/opencv-4.1.2/data/haarcascades/";
   cascadeName = folder + "haarcascade_frontalface_alt.xml";
@@ -154,28 +194,26 @@ void detectAndDraw(Mat& frame, CascadeClassifier& cascade, CascadeClassifier& ne
   frames++; // Incrementa o frame
 
   // A cada 30 frames toca um som
-  /*if(frames % 30 == 0){
-    system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
-  }*/
+  //if(frames % 30 == 0){
+    //system("mplayer /home/rosivaldo/Documentos/Faculdade/2019.2/Programacao1/FlappyBird/som.mp3 &");
+  //}
+  //string q;
+  //cin >> q;
+  //system("mplayer [q] [/home/rosivaldo/Documentos/Faculdade/2019.2/Programacao1/FlappyBird/som.mp3]");
 
   t = (double)getTickCount() - t;
   //printf("detection time = %g ms\n", t*1000/getTickFrequency());
   
   // Se entrar aqui é pq detectou a face
   for(size_t i = 0; i < faces.size(); i++){
-    Rect r = faces[i];
-    printf("[%3d, %3d]\n", r.x, r.y);
+    r = faces[i];
+    //printf("[%3d, %3d]\n", r.x, r.y);
     Mat smallImgROI;
     vector<Rect> nestedObjects;
     Point center;
     Scalar color = colors[i%8];
-    int radius;
-    //int move = 0;
 
     rectangle(frame, Point(cvRound(r.x*scale), cvRound(r.y*scale)), Point(cvRound((r.x + r.width-1)*scale), cvRound((r.y + r.height-1)*scale)), color, 3, 8, 0);
-
-    drawBird(frame, r.y); // Desenha o personagem na tela
-    drawScenery(frame, 100, frames); // Desenha os canos na tela
     
     if(nestedCascade.empty()){
       continue;
@@ -186,102 +224,174 @@ void detectAndDraw(Mat& frame, CascadeClassifier& cascade, CascadeClassifier& ne
     //|CASCADE_FIND_BIGGEST_OBJECT |CASCADE_DO_ROUGH_SEARCH |CASCADE_DO_CANNY_PRUNING
     nestedCascade.detectMultiScale(smallImgROI, nestedObjects, 1.1, 2, 0 |CASCADE_SCALE_IMAGE, Size(30, 30));
     
-    // Se entrar aqui é pq detectou o olho
-    for(size_t j = 0; j < nestedObjects.size(); j++){
-      Rect nr = nestedObjects[j];
-      center.x = cvRound((r.x + nr.x + nr.width*0.5)*scale);
-      center.y = cvRound((r.y + nr.y + nr.height*0.5)*scale);
-      radius = cvRound((nr.width + nr.height)*0.25*scale);
-      circle(frame, center, radius, color, 3, 8, 0);
-    }
   }
 
-  if(!fruta.empty()){
-    drawTransparency2(frame, fruta, 100, 100);
-  }
+  drawScenery(frame, frames); // Desenha os canos na tela
+  drawBird(frame, r.y, frames); // Desenha o personagem na tela
+
+  //drawTransparency2(frame, fundo, 10, 10);
+  fundo.copyTo(frame.colRange(0, 0 + fundo.cols).rowRange(0, 0 + fundo.rows));
+
+  scoreString = to_string(score);
 
   cv::putText(frame, // target image
-    "Meu texto de teste", // text
-    cv::Point(50, 50), // top-left position
+    "SCORE", // text
+    cv::Point(255, 25), // top-left position
     cv::FONT_HERSHEY_DUPLEX,
     1.0,
-    CV_RGB(255, 0, 0), // font color
+    CV_RGB(0, 0, 0), // font color
+    2
+  );
+
+  cv::putText(frame, // target image
+    scoreString, // text
+    cv::Point(290, 60), // top-left position
+    cv::FONT_HERSHEY_DUPLEX,
+    1.0,
+    CV_RGB(0, 0, 0), // font color
     2
   );
 
   imshow("Flappy Bird", frame);
 }
 
+/**
+ * 
+ * FUNÇÕES DO PROGRAMA
+ * 
+**/
+
 // Função para desenhar e movimentar o personagem
-void drawBird(Mat frame, int ry){
-  static int x = 280; // Inicio da imagem
-  static int y = 240; // Inicio da imagem
+void drawBird(Mat frame, int ry, int frames){
   static int ryFun = ry; // Recebe a posição inicial da coordenada y
-  
+  static int velocidade = 2; // Velocidade inicial = 2 / Velocidade máxima = 7;
+
   if(ry >= ryFun && ry <= ryFun){
-    // colRange() -> x / rowRange() -> y
-    x += 1;
     bird.copyTo(frame.colRange(x, x + bird.cols).rowRange(y, y + bird.rows));
   }
   
   if(ry > ryFun){
-    x += 1;
-    y += 10;
+    y += velocidade;
+    x += velocidade;
+    detectCollision(y, velocidade);
     bird.copyTo(frame.colRange(x, x + bird.cols).rowRange(y, y + bird.rows));
   }
 
   if(ry < ryFun){
-    x -= 1;
-    y -= 10;
-    bird.copyTo(frame.colRange(x, x + bird.cols).rowRange(y, y + bird.rows)); 
+    y -= velocidade;
+    x += velocidade;
+    detectCollision(y, velocidade);
+    bird.copyTo(frame.colRange(x, x + bird.cols).rowRange(y, y + bird.rows));
+  }
+
+  // Verifica se chegou no limite da tela e reinicia
+  if(x >= 525){
+    x = 0;
+    y = 240;
+    velocidade += 1;
+    if(velocidade > 7){
+      velocidade = 2;
+    }
+  }
+  
+  // Conta os pontos
+  if(frames % 15 == 0){
+    score += 1;
   }
 }
 
-void drawScenery(Mat frame, int incrementCenario, int frames){
-  const int y = 0; // Max width (x) = 550 Max height (y) = 250
-  static int x = 0;
-  static int x2 = 100;
-  static int x3 = 200;
-  static int x4 = 300;
-  //if(frames % 30 == 0){
-    
-    cano.copyTo(frame.colRange(x, x + cano.cols).rowRange(y, y + cano.rows));
-    cano.copyTo(frame.colRange(x2, x2 + cano.cols).rowRange(50, 50 + cano.rows));
-    cano.copyTo(frame.colRange(x3, x3 + cano.cols).rowRange(20, 20 + cano.rows));
-    cano.copyTo(frame.colRange(x4, x4 + cano.cols).rowRange(20, 20 + cano.rows));
-    /*cano.copyTo(frame.colRange(x, x + cano.cols).rowRange(y, y + cano.rows));
-    cano.copyTo(frame.colRange(x, x + cano.cols).rowRange(y, y + cano.rows));
-    cano.copyTo(frame.colRange(x, x + cano.cols).rowRange(y, y + cano.rows));*/
-    //cano.copyTo(frame.colRange(x, x + cano.cols).rowRange(y, y + cano.rows));
-    
-    /*if(x  x2){
-      cout << "colidiu" << endl;
-    }*/
-    //cano.copyTo(frame.colRange(100, 100 + cano.cols).rowRange(50, 50 + cano.rows));
-    //cano.copyTo(frame.colRange(200, 200 + cano.cols).rowRange(y, y + cano.rows));
-    //cano.copyTo(frame.colRange(300, 300 + cano.cols).rowRange(50, 50 + cano.rows));
-  //}else{
-    //cano.copyTo(frame.colRange(50, 50 + cano.cols).rowRange(30, 30 + cano.rows));
-    //cano.copyTo(frame.colRange(150, 150 + cano.cols).rowRange(y, y + cano.rows));
-    //cano.copyTo(frame.colRange(250, 250 + cano.cols).rowRange(30, 30 + cano.rows));
-    //cano.copyTo(frame.colRange(350, 350 + cano.cols).rowRange(y, y + cano.rows));
-  //}
-  if(frames % 5 == 0){
-    x += 50;
-    x2 += 50;
-    x3 += 50;
-    x4 += 50;
-  }
-  /*if(x >= 550){
-      x = 0;
-    }*/
-    /*if(x2 >= 550){
-      x2 = 100;
-    }*/
-    if(x4 >= 550){
-      x = 0;
-      x2 = 100;
-      x3 = 200;
-      x4 = 300;
+void drawScenery(Mat frame, int frames){
+  const int y1 = 0; // Max width (x) = 550 Max height (y) = 250
+  //const int y2 = 300;
+  static int x1[] = {20, 100, 180, 250}; // Posições na coordenada x
+  static int x2[] = {535, 470, 390, 320}; // Posições na coordenada x
+
+  // Figura 3
+  canos[2].copyTo(frame.colRange(x1[0], x1[0] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  canos[2].copyTo(frame.colRange(x1[1], x1[1] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  canos[2].copyTo(frame.colRange(x1[2], x1[2] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  canos[2].copyTo(frame.colRange(x1[3], x1[3] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  
+  canos[2].copyTo(frame.colRange(x2[3], x2[3] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  canos[2].copyTo(frame.colRange(x2[2], x2[2] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  canos[2].copyTo(frame.colRange(x2[1], x2[1] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  canos[2].copyTo(frame.colRange(x2[0], x2[0] + canos[2].cols).rowRange(y1, y1 + canos[2].rows));
+  
+  //Figura cano_baixo01
+  canos[4].copyTo(frame.colRange(x1[0], x1[0] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  canos[4].copyTo(frame.colRange(x1[3], x1[3] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  canos[4].copyTo(frame.colRange(x1[1], x1[1] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  canos[4].copyTo(frame.colRange(x1[2], x1[2] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  
+  canos[4].copyTo(frame.colRange(x2[3], x2[3] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  canos[4].copyTo(frame.colRange(x2[2], x2[2] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  canos[4].copyTo(frame.colRange(x2[1], x2[1] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  canos[4].copyTo(frame.colRange(x2[0], x2[0] + canos[4].cols).rowRange(315, 315 + canos[4].rows));
+  //cout << "Cano baixo: " << canos[4].size().height << endl;
+
+}
+
+void detectCollision(int yBird, int velocidade){
+  int a;
+  
+  if(velocidade == 2){
+    if(yBird == 192){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
     }
+    if(yBird == 272){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+  }
+  if(velocidade == 3){
+    if(yBird == 198){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+    if(yBird == 273){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+  }
+  if(velocidade == 4){
+    if(yBird == 196){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+    if(yBird == 276){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+  }
+  if(velocidade == 5){
+    if(yBird == 195){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+    if(yBird == 275){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+  }
+  if(velocidade == 6){
+    if(yBird == 192){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+    if(yBird == 276){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+  }
+  if(velocidade == 7){
+    if(yBird == 191){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+    if(yBird == 282){
+      system("mplayer /usr/lib/libreoffice/share/gallery/sounds/kling.wav &");
+      cin >> a;
+    }
+  }
 }
